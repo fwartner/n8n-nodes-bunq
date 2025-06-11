@@ -107,7 +107,7 @@ async function testInstallation(baseUrl) {
         console.log('Response:', JSON.stringify(response.body, null, 2));
 
         if (response.statusCode === 200 && response.body.Response) {
-            const installationToken = response.body.Response[1] ? .Token ? .token;
+            const installationToken = response.body.Response[1] && response.body.Response[1].Token && response.body.Response[1].Token.token;
             console.log(`Installation Token: ${installationToken ? 'Generated successfully' : 'Not found'}`);
 
             return {
@@ -170,7 +170,7 @@ async function testSessionCreation(baseUrl, installationToken) {
         console.log('Response:', JSON.stringify(response.body, null, 2));
 
         if (response.statusCode === 200 && response.body.Response) {
-            const sessionToken = response.body.Response[1] ? .Token ? .token;
+            const sessionToken = response.body.Response[1] && response.body.Response[1].Token && response.body.Response[1].Token.token;
             console.log(`Session Token: ${sessionToken ? 'Generated successfully' : 'Not found'}`);
             return sessionToken;
         }
