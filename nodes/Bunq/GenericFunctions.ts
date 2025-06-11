@@ -10,6 +10,16 @@ import {
 } from 'n8n-workflow';
 import { createSign, generateKeyPairSync, randomBytes } from 'crypto';
 
+export interface IBunqOAuth2Credentials {
+	environment: 'production' | 'sandbox';
+	clientId: string;
+	clientSecret: string;
+	apiKey: string;
+	accessToken?: string;
+	refreshToken?: string;
+	oauthTokenData?: any;
+}
+
 export interface IBunqCredentials {
 	environment: 'production' | 'sandbox';
 	apiKey: string;
@@ -77,7 +87,21 @@ export async function bunqApiRequest(
 	qs: IDataObject = {},
 	headers: IDataObject = {},
 ): Promise<any> {
-	const credentials = await this.getCredentials('bunqApi') as IBunqCredentials;
+	// Try OAuth2 credentials first, fall back to legacy API key credentials
+	let credentials: IBunqOAuth2Credentials | IBunqCredentials | null = null;
+	let useOAuth = false;
+
+	try {
+		credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
+		useOAuth = true;
+	} catch {
+		try {
+			credentials = await this.getCredentials('bunqApi') as IBunqCredentials;
+			useOAuth = false;
+		} catch {
+			throw new NodeOperationError(this.getNode(), 'No valid bunq credentials found!');
+		}
+	}
 	
 	if (!credentials) {
 		throw new NodeOperationError(this.getNode(), 'No credentials got returned!');
@@ -97,22 +121,36 @@ export async function bunqApiRequest(
 		'Cache-Control': 'no-cache',
 	};
 
-	if (credentials.sessionToken) {
-		defaultHeaders['X-Bunq-Client-Authentication'] = credentials.sessionToken;
+	if (useOAuth) {
+		// OAuth2 authentication
+		const oauthCredentials = credentials as IBunqOAuth2Credentials;
+		if (oauthCredentials.oauthTokenData?.access_token) {
+			defaultHeaders['Authorization'] = `Bearer ${oauthCredentials.oauthTokenData.access_token}`;
+		}
+	} else {
+		// Legacy API key authentication
+		const legacyCredentials = credentials as IBunqCredentials;
+		if (legacyCredentials.sessionToken) {
+			defaultHeaders['X-Bunq-Client-Authentication'] = legacyCredentials.sessionToken;
+		}
 	}
 
 	const requestHeaders = { ...defaultHeaders, ...headers };
 	const bodyString = Object.keys(body).length > 0 ? JSON.stringify(body) : '';
 
-	if (credentials.privateKey && endpoint !== '/installation') {
-		const signature = createRequestSignature(
-			method.toUpperCase(),
-			`/v1${endpoint}`,
-			requestHeaders,
-			bodyString,
-			credentials.privateKey,
-		);
-		requestHeaders['X-Bunq-Client-Signature'] = signature;
+	// Only add signature for legacy authentication
+	if (!useOAuth) {
+		const legacyCredentials = credentials as IBunqCredentials;
+		if (legacyCredentials.privateKey && endpoint !== '/installation') {
+			const signature = createRequestSignature(
+				method.toUpperCase(),
+				`/v1${endpoint}`,
+				requestHeaders,
+				bodyString,
+				legacyCredentials.privateKey,
+			);
+			requestHeaders['X-Bunq-Client-Signature'] = signature;
+		}
 	}
 
 	const options: IRequestOptions = {
@@ -192,6 +230,133 @@ export async function validateCredentials(
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+export async function getOAuthAccessToken(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	authCode: string,
+	redirectUri: string,
+): Promise<any> {
+	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
+	
+	if (!credentials) {
+		throw new NodeOperationError(this.getNode(), 'No OAuth2 credentials found!');
+	}
+
+	const baseUrl = getBunqApiUrl(credentials.environment);
+	
+	const tokenData = {
+		grant_type: 'authorization_code',
+		code: authCode,
+		client_id: credentials.clientId,
+		client_secret: credentials.clientSecret,
+		redirect_uri: redirectUri,
+	};
+
+	const options: IRequestOptions = {
+		method: 'POST',
+		url: `${baseUrl}/v1/oauth/token`,
+		form: tokenData,
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
+			'User-Agent': 'n8n-bunq-integration/1.0.0',
+		},
+	};
+
+	try {
+		const response = await this.helpers.request(options);
+		return response;
+	} catch (error) {
+		throw handleBunqError(this.getNode(), error, '/oauth/token');
+	}
+}
+
+export async function refreshOAuthToken(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	refreshToken: string,
+): Promise<any> {
+	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
+	
+	if (!credentials) {
+		throw new NodeOperationError(this.getNode(), 'No OAuth2 credentials found!');
+	}
+
+	const baseUrl = getBunqApiUrl(credentials.environment);
+	
+	const tokenData = {
+		grant_type: 'refresh_token',
+		refresh_token: refreshToken,
+		client_id: credentials.clientId,
+		client_secret: credentials.clientSecret,
+	};
+
+	const options: IRequestOptions = {
+		method: 'POST',
+		url: `${baseUrl}/v1/oauth/token`,
+		form: tokenData,
+		headers: {
+			'Content-Type': 'application/x-www-form-urlencoded',
+			'User-Agent': 'n8n-bunq-integration/1.0.0',
+		},
+	};
+
+	try {
+		const response = await this.helpers.request(options);
+		return response;
+	} catch (error) {
+		throw handleBunqError(this.getNode(), error, '/oauth/token');
+	}
+}
+
+export async function bunqOAuthApiRequest(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+	method: string,
+	endpoint: string,
+	body: IDataObject = {},
+	qs: IDataObject = {},
+	headers: IDataObject = {},
+): Promise<any> {
+	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
+	
+	if (!credentials) {
+		throw new NodeOperationError(this.getNode(), 'No OAuth2 credentials found!');
+	}
+
+	const baseUrl = getBunqApiUrl(credentials.environment);
+	const uri = `${baseUrl}/v1${endpoint}`;
+	const requestId = generateRequestId();
+	
+	const defaultHeaders: IDataObject = {
+		'Content-Type': 'application/json',
+		'X-Bunq-Language': 'en_US',
+		'X-Bunq-Region': 'nl_NL',
+		'X-Bunq-Client-Request-Id': requestId,
+		'X-Bunq-Geolocation': '0 0 0 0 000',
+		'User-Agent': 'n8n-bunq-integration/1.0.0',
+		'Cache-Control': 'no-cache',
+		...headers,
+	};
+
+	// Add OAuth Bearer token
+	if (credentials.oauthTokenData?.access_token) {
+		defaultHeaders['Authorization'] = `Bearer ${credentials.oauthTokenData.access_token}`;
+	}
+
+	const options: IRequestOptions = {
+		method: method as any,
+		url: uri,
+		body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
+		qs,
+		headers: defaultHeaders,
+		json: true,
+	};
+
+	try {
+		const response = await this.helpers.request(options);
+		return response;
+	} catch (error) {
+		throw handleBunqError(this.getNode(), error, endpoint);
 	}
 }
 
