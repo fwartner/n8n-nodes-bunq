@@ -46,14 +46,14 @@ export class BunqApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Installation token (will be generated automatically if empty)',
+			description: 'Installation token - Leave empty to generate automatically when using the node',
 		},
 		{
 			displayName: 'Device ID',
 			name: 'deviceId',
 			type: 'string',
 			default: '',
-			description: 'Device ID (will be generated automatically if empty)',
+			description: 'Device ID - Leave empty to generate automatically when using the node',
 		},
 		{
 			displayName: 'Session Token',
@@ -63,7 +63,7 @@ export class BunqApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Session token (will be generated automatically if empty)',
+			description: 'Session token - Leave empty to generate automatically when using the node',
 		},
 		{
 			displayName: 'Private Key',
@@ -73,14 +73,14 @@ export class BunqApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Private key for request signing (will be generated automatically if empty)',
+			description: 'Private key for request signing - Leave empty to generate automatically when using the node',
 		},
 		{
 			displayName: 'Public Key',
 			name: 'publicKey',
 			type: 'string',
 			default: '',
-			description: 'Public key for request signing (will be generated automatically if empty)',
+			description: 'Public key for request signing - Leave empty to generate automatically when using the node',
 		},
 	];
 
@@ -104,4 +104,5 @@ export class BunqApi implements ICredentialType {
 			method: 'GET' as const,
 		},
 	};
+
 }
