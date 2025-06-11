@@ -1,5 +1,5 @@
 import { BunqApi } from '../../credentials/BunqApi.credentials';
-import { ICredentialTestRequest, INodeProperties } from 'n8n-workflow';
+import { INodeProperties } from 'n8n-workflow';
 
 describe('BunqApi Credentials', () => {
 	let bunqApiCredentials: BunqApi;
@@ -118,9 +118,9 @@ describe('BunqApi Credentials', () => {
 			expect(bunqApiCredentials.authenticate.properties.headers).toBeDefined();
 			
 			const headers = bunqApiCredentials.authenticate.properties.headers;
-			expect(headers!['X-Bunq-Language']).toBe('en_US');
-			expect(headers!['X-Bunq-Region']).toBe('nl_NL');
-			expect(headers!['X-Bunq-Client-Authentication']).toBe('={{$credentials.sessionToken}}');
+			expect(headers && headers['X-Bunq-Language']).toBe('en_US');
+			expect(headers && headers['X-Bunq-Region']).toBe('nl_NL');
+			expect(headers && headers['X-Bunq-Client-Authentication']).toBe('={{$credentials.sessionToken}}');
 		});
 	});
 

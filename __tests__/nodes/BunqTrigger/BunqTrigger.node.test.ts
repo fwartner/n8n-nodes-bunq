@@ -1,5 +1,5 @@
 import { BunqTrigger } from '../../../nodes/BunqTrigger/BunqTrigger.node';
-import { IHookFunctions, IWebhookFunctions, IDataObject, INode } from 'n8n-workflow';
+import { IHookFunctions, IWebhookFunctions, INode } from 'n8n-workflow';
 
 // Mock the GenericFunctions
 jest.mock('../../../nodes/Bunq/GenericFunctions', () => ({

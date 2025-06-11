@@ -1,5 +1,5 @@
 import { Bunq } from '../../../nodes/Bunq/Bunq.node';
-import { IExecuteFunctions, INodeExecutionData, ICredentialDataDecryptedObject, INode } from 'n8n-workflow';
+import { IExecuteFunctions, INode } from 'n8n-workflow';
 
 // Mock the GenericFunctions
 jest.mock('../../../nodes/Bunq/GenericFunctions', () => ({
@@ -10,7 +10,6 @@ jest.mock('../../../nodes/Bunq/GenericFunctions', () => ({
 }));
 
 const mockBunqApiRequest = require('../../../nodes/Bunq/GenericFunctions').bunqApiRequest;
-const mockBunqApiRequestAllItems = require('../../../nodes/Bunq/GenericFunctions').bunqApiRequestAllItems;
 const mockInitializeBunqSession = require('../../../nodes/Bunq/GenericFunctions').initializeBunqSession;
 
 describe('Bunq Node', () => {
@@ -124,7 +123,7 @@ describe('Bunq Node', () => {
 	describe('Payment Operations', () => {
 		beforeEach(() => {
 			(mockExecuteFunctions.getNodeParameter as jest.Mock)
-				.mockImplementation((paramName, index) => {
+				.mockImplementation((paramName, _index) => {
 					switch (paramName) {
 						case 'resource': return 'payment';
 						case 'operation': return 'create';
