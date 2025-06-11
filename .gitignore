@@ -95,6 +95,7 @@ jspm_packages/
 ehthumbs.db
 Thumbs.db
 .history
+.history
 
 # Test files
 test-credentials.json
@@ -106,4 +107,4 @@ temp/
 
 # Claude files
 CLAUDE.md
-./claude
+.claude
