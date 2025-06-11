@@ -1,6 +1,6 @@
 {
     "name": "n8n-nodes-bunq-test",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "description": "n8n nodes for bunq banking API integration",
     "keywords": [
         "n8n-community-node-package",
