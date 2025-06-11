@@ -41,7 +41,7 @@ export class Bunq implements INodeType {
 		outputs: ['main'],
 		credentials: [
 			{
-				name: 'bunqOAuth2Api',
+				name: 'bunqApi',
 				required: true,
 			},
 		],

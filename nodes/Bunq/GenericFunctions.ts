@@ -9,10 +9,14 @@ import {
 } from 'n8n-workflow';
 import * as crypto from 'crypto';
 
-export interface IBunqOAuth2Credentials {
+export interface IBunqApiCredentials {
 	environment: 'production' | 'sandbox';
-	clientId: string;
-	clientSecret: string;
+	apiKey: string;
+	installationToken?: string;
+	deviceId?: string;
+	sessionToken?: string;
+	privateKey?: string;
+	publicKey?: string;
 }
 
 export function getBunqApiUrl(environment: string): string {
@@ -22,7 +26,146 @@ export function getBunqApiUrl(environment: string): string {
 }
 
 /**
- * Make an authenticated API request to bunq using OAuth2
+ * Initialize bunq API session if needed
+ */
+export async function initializeBunqSession(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+): Promise<IBunqApiCredentials> {
+	const credentials = await this.getCredentials('bunqApi') as IBunqApiCredentials;
+	
+	// Generate key pair if not exists
+	if (!credentials.privateKey || !credentials.publicKey) {
+		const keyPair = generateKeyPair();
+		credentials.privateKey = keyPair.privateKey;
+		credentials.publicKey = keyPair.publicKey;
+	}
+	
+	// Generate device ID if not exists
+	if (!credentials.deviceId) {
+		credentials.deviceId = generateDeviceId();
+	}
+	
+	// Create installation if token doesn't exist
+	if (!credentials.installationToken) {
+		credentials.installationToken = await createInstallation.call(this, credentials);
+	}
+	
+	// Create session if token doesn't exist or expired
+	if (!credentials.sessionToken) {
+		credentials.sessionToken = await createSession.call(this, credentials);
+	}
+	
+	return credentials;
+}
+
+/**
+ * Create installation for bunq API
+ */
+async function createInstallation(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+	credentials: IBunqApiCredentials,
+): Promise<string> {
+	const baseUrl = getBunqApiUrl(credentials.environment);
+	const requestId = generateRequestId();
+	
+	const installationData = {
+		client_public_key: credentials.publicKey,
+	};
+	
+	const options: IRequestOptions = {
+		method: 'POST',
+		url: `${baseUrl}/v1/installation`,
+		body: installationData,
+		headers: {
+			'Content-Type': 'application/json',
+			'Cache-Control': 'no-cache',
+			'User-Agent': 'n8n-bunq-node/1.0.0',
+			'X-Bunq-Language': 'en_US',
+			'X-Bunq-Region': 'nl_NL',
+			'X-Bunq-Client-Request-Id': requestId,
+			'X-Bunq-Geolocation': '0 0 0 0 000',
+		},
+		json: true,
+	};
+	
+	try {
+		const response = await this.helpers.request(options) as IDataObject;
+		
+		if (response.Response && Array.isArray(response.Response)) {
+			// Find the installation token
+			for (const item of response.Response) {
+				if (item.Token) {
+					const token = item.Token as IDataObject;
+					return token.token as string;
+				}
+			}
+		}
+		
+		throw new Error('Installation token not found in response');
+	} catch (error) {
+		throw handleBunqError(this.getNode(), error as NodeApiError | Error, '/v1/installation');
+	}
+}
+
+/**
+ * Create session for bunq API
+ */
+async function createSession(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+	credentials: IBunqApiCredentials,
+): Promise<string> {
+	const baseUrl = getBunqApiUrl(credentials.environment);
+	const requestId = generateRequestId();
+	
+	const sessionData = {
+		secret: credentials.apiKey,
+	};
+	
+	const body = JSON.stringify(sessionData);
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		'Cache-Control': 'no-cache',
+		'User-Agent': 'n8n-bunq-node/1.0.0',
+		'X-Bunq-Language': 'en_US',
+		'X-Bunq-Region': 'nl_NL',
+		'X-Bunq-Client-Request-Id': requestId,
+		'X-Bunq-Geolocation': '0 0 0 0 000',
+		'X-Bunq-Client-Authentication': credentials.installationToken!,
+	};
+	
+	// Create signature
+	const signature = createRequestSignature('POST', '/v1/session-server', headers, body, credentials.privateKey!);
+	headers['X-Bunq-Client-Signature'] = signature;
+	
+	const options: IRequestOptions = {
+		method: 'POST',
+		url: `${baseUrl}/v1/session-server`,
+		body: sessionData,
+		headers,
+		json: true,
+	};
+	
+	try {
+		const response = await this.helpers.request(options) as IDataObject;
+		
+		if (response.Response && Array.isArray(response.Response)) {
+			// Find the session token
+			for (const item of response.Response) {
+				if (item.Token) {
+					const token = item.Token as IDataObject;
+					return token.token as string;
+				}
+			}
+		}
+		
+		throw new Error('Session token not found in response');
+	} catch (error) {
+		throw handleBunqError(this.getNode(), error as NodeApiError | Error, '/v1/session-server');
+	}
+}
+
+/**
+ * Make an authenticated API request to bunq
  */
 export async function bunqApiRequest(
 	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
@@ -32,7 +175,7 @@ export async function bunqApiRequest(
 	qs: IDataObject = {},
 	headers: IDataObject = {},
 ): Promise<IDataObject> {
-	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
+	const credentials = await initializeBunqSession.call(this);
 	const baseUrl = getBunqApiUrl(credentials.environment);
 	
 	// Ensure endpoint starts with /v1/
@@ -41,30 +184,53 @@ export async function bunqApiRequest(
 
 	// Generate request ID for bunq API requirements
 	const requestId = generateRequestId();
+	
+	const requestBody = Object.keys(body).length > 0 ? JSON.stringify(body) : '';
+	const requestHeaders: Record<string, string> = {
+		'Content-Type': 'application/json',
+		'Cache-Control': 'no-cache',
+		'User-Agent': 'n8n-bunq-node/1.0.0',
+		'X-Bunq-Language': 'en_US',
+		'X-Bunq-Region': 'nl_NL',
+		'X-Bunq-Client-Request-Id': requestId,
+		'X-Bunq-Geolocation': '0 0 0 0 000',
+		'X-Bunq-Client-Authentication': credentials.sessionToken!,
+		...headers as Record<string, string>,
+	};
+	
+	// Create signature for the request
+	const signature = createRequestSignature(method, apiEndpoint, requestHeaders, requestBody, credentials.privateKey!);
+	requestHeaders['X-Bunq-Client-Signature'] = signature;
 
 	const options: IRequestOptions = {
 		method,
 		url,
 		body: Object.keys(body).length > 0 ? body : undefined,
 		qs,
-		headers: {
-			'Content-Type': 'application/json',
-			'Cache-Control': 'no-cache',
-			'User-Agent': 'n8n-bunq-node/1.0.0',
-			'X-Bunq-Language': 'en_US',
-			'X-Bunq-Region': 'nl_NL',
-			'X-Bunq-Client-Request-Id': requestId,
-			'X-Bunq-Geolocation': '0 0 0 0 000',
-			...headers,
-		},
+		headers: requestHeaders,
 		json: true,
 	};
 
 	try {
-		// Use n8n's built-in OAuth2 authentication
-		const response = await this.helpers.requestWithAuthentication.call(this, 'bunqOAuth2Api', options);
-		return formatBunqResponse(response as IDataObject);
+		const response = await this.helpers.request(options) as IDataObject;
+		return formatBunqResponse(response);
 	} catch (error) {
+		// If session expired, try to create a new session and retry once
+		if (isSessionExpiredError(error)) {
+			try {
+				credentials.sessionToken = await createSession.call(this, credentials);
+				requestHeaders['X-Bunq-Client-Authentication'] = credentials.sessionToken;
+				const newSignature = createRequestSignature(method, apiEndpoint, requestHeaders, requestBody, credentials.privateKey!);
+				requestHeaders['X-Bunq-Client-Signature'] = newSignature;
+				options.headers = requestHeaders;
+				
+				const retryResponse = await this.helpers.request(options) as IDataObject;
+				return formatBunqResponse(retryResponse);
+			} catch (retryError) {
+				throw handleBunqError(this.getNode(), retryError as NodeApiError | Error, endpoint);
+			}
+		}
+		
 		throw handleBunqError(this.getNode(), error as NodeApiError | Error, endpoint);
 	}
 }
@@ -162,6 +328,33 @@ export function handleBunqError(node: any, error: NodeApiError | Error, endpoint
 }
 
 /**
+ * Check if error is session expired
+ */
+function isSessionExpiredError(error: any): boolean {
+	if ('statusCode' in error && error.statusCode === 401) {
+		return true;
+	}
+	
+	if ('response' in error && error.response?.body) {
+		try {
+			const errorBody = typeof error.response.body === 'string' 
+				? JSON.parse(error.response.body) 
+				: error.response.body;
+			
+			if (errorBody.Error && Array.isArray(errorBody.Error)) {
+				return errorBody.Error.some((err: any) => 
+					err.error_description && err.error_description.includes('session')
+				);
+			}
+		} catch {
+			// Ignore parsing errors
+		}
+	}
+	
+	return false;
+}
+
+/**
  * Format bunq API response for consistent output
  */
 export function formatBunqResponse(response: IDataObject): IDataObject {
@@ -210,7 +403,7 @@ export function formatBunqResponse(response: IDataObject): IDataObject {
 }
 
 /**
- * OAuth2-specific API request for hooks/webhooks
+ * API request for hooks/webhooks
  */
 export async function bunqApiRequestHook(
 	this: IHookFunctions,
@@ -223,9 +416,9 @@ export async function bunqApiRequestHook(
 }
 
 /**
- * Validate OAuth2 credentials
+ * Validate API credentials
  */
-export async function validateOAuth2Credentials(
+export async function validateApiCredentials(
 	this: IExecuteFunctions | ILoadOptionsFunctions,
 ): Promise<boolean> {
 	try {

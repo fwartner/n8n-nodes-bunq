@@ -29,7 +29,7 @@ export class BunqTrigger implements INodeType {
 		outputs: ['main'],
 		credentials: [
 			{
-				name: 'bunqOAuth2Api',
+				name: 'bunqApi',
 				required: true,
 			},
 		],
