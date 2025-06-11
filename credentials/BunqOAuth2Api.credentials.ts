@@ -55,11 +55,17 @@ export class BunqOAuth2Api implements ICredentialType {
 			displayName: 'Auth URI Query Parameters',
 			name: 'authQueryParameters',
 			type: 'hidden',
-			default: 'response_type=code&state={{$randomString}}',
+			default: 'response_type=code',
 		},
 		{
 			displayName: 'Authentication',
 			name: 'authentication',
+			type: 'hidden',
+			default: 'body',
+		},
+		{
+			displayName: 'Client Authentication Method',
+			name: 'clientAuthentication',
 			type: 'hidden',
 			default: 'body',
 		},
@@ -69,7 +75,7 @@ export class BunqOAuth2Api implements ICredentialType {
 			type: 'string',
 			required: true,
 			default: '',
-			description: 'Your bunq OAuth2 Client ID',
+			description: 'Your bunq OAuth2 Client ID from the bunq developer portal',
 		},
 		{
 			displayName: 'Client Secret',
@@ -80,15 +86,7 @@ export class BunqOAuth2Api implements ICredentialType {
 			},
 			required: true,
 			default: '',
-			description: 'Your bunq OAuth2 Client Secret',
-		},
-		{
-			displayName: 'Redirect URI Override',
-			name: 'redirectUrl',
-			type: 'string',
-			required: false,
-			default: '',
-			description: 'Custom redirect URI if different from n8n default. Must match exactly what you registered with bunq.',
+			description: 'Your bunq OAuth2 Client Secret from the bunq developer portal',
 		},
 	];
 
@@ -97,6 +95,13 @@ export class BunqOAuth2Api implements ICredentialType {
 			baseURL: '={{$credentials.environment === "production" ? "https://api.bunq.com" : "https://public-api.sandbox.bunq.com"}}',
 			url: '/v1/user',
 			method: 'GET',
+			headers: {
+				'Cache-Control': 'no-cache',
+				'X-Bunq-Language': 'en_US',
+				'X-Bunq-Region': 'nl_NL',
+				'X-Bunq-Client-Request-Id': '={{$randomString}}',
+				'X-Bunq-Geolocation': '0 0 0 0 000',
+			},
 		},
 	};
 }

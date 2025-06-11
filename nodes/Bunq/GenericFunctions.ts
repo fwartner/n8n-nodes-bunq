@@ -39,6 +39,9 @@ export async function bunqApiRequest(
 	const apiEndpoint = endpoint.startsWith('/v1/') ? endpoint : `/v1${endpoint}`;
 	const url = `${baseUrl}${apiEndpoint}`;
 
+	// Generate request ID for bunq API requirements
+	const requestId = generateRequestId();
+
 	const options: IRequestOptions = {
 		method,
 		url,
@@ -47,7 +50,11 @@ export async function bunqApiRequest(
 		headers: {
 			'Content-Type': 'application/json',
 			'Cache-Control': 'no-cache',
-			'User-Agent': 'n8n-bunq-node',
+			'User-Agent': 'n8n-bunq-node/1.0.0',
+			'X-Bunq-Language': 'en_US',
+			'X-Bunq-Region': 'nl_NL',
+			'X-Bunq-Client-Request-Id': requestId,
+			'X-Bunq-Geolocation': '0 0 0 0 000',
 			...headers,
 		},
 		json: true,
@@ -56,7 +63,7 @@ export async function bunqApiRequest(
 	try {
 		// Use n8n's built-in OAuth2 authentication
 		const response = await this.helpers.requestWithAuthentication.call(this, 'bunqOAuth2Api', options);
-		return response as IDataObject;
+		return formatBunqResponse(response as IDataObject);
 	} catch (error) {
 		throw handleBunqError(this.getNode(), error as NodeApiError | Error, endpoint);
 	}
