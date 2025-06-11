@@ -101,7 +101,7 @@ export class BunqApi implements ICredentialType {
 		request: {
 			baseURL: '={{$credentials.environment === "production" ? "https://api.bunq.com" : "https://public-api.sandbox.bunq.com"}}',
 			url: '/v1/user',
-			method: 'GET' as any,
+			method: 'GET' as const,
 		},
 	};
 }

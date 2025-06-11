@@ -35,8 +35,7 @@
     "n8n": {
         "n8nNodesApiVersion": 1,
         "credentials": [
-            "dist/credentials/BunqApi.credentials.js",
-            "dist/credentials/BunqOAuth2Api.credentials.js"
+            "dist/credentials/BunqApi.credentials.js"
         ],
         "nodes": [
             "dist/nodes/Bunq/Bunq.node.js",

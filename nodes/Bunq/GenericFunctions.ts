@@ -31,7 +31,13 @@ export function getBunqApiUrl(environment: string): string {
 export async function initializeBunqSession(
 	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
 ): Promise<IBunqApiCredentials> {
-	const credentials = await this.getCredentials('bunqApi') as IBunqApiCredentials;
+	let credentials: IBunqApiCredentials;
+	
+	try {
+		credentials = await this.getCredentials('bunqApi') as IBunqApiCredentials;
+	} catch {
+		throw new NodeApiError(this.getNode(), { message: 'bunq API credentials are required' });
+	}
 	
 	// Generate key pair if not exists
 	if (!credentials.privateKey || !credentials.publicKey) {
@@ -130,11 +136,11 @@ async function createSession(
 		'X-Bunq-Region': 'nl_NL',
 		'X-Bunq-Client-Request-Id': requestId,
 		'X-Bunq-Geolocation': '0 0 0 0 000',
-		'X-Bunq-Client-Authentication': credentials.installationToken!,
+		'X-Bunq-Client-Authentication': credentials.installationToken || '',
 	};
 	
 	// Create signature
-	const signature = createRequestSignature('POST', '/v1/session-server', headers, body, credentials.privateKey!);
+	const signature = createRequestSignature('POST', '/v1/session-server', headers, body, credentials.privateKey || '');
 	headers['X-Bunq-Client-Signature'] = signature;
 	
 	const options: IRequestOptions = {
@@ -194,12 +200,12 @@ export async function bunqApiRequest(
 		'X-Bunq-Region': 'nl_NL',
 		'X-Bunq-Client-Request-Id': requestId,
 		'X-Bunq-Geolocation': '0 0 0 0 000',
-		'X-Bunq-Client-Authentication': credentials.sessionToken!,
+		'X-Bunq-Client-Authentication': credentials.sessionToken || '',
 		...headers as Record<string, string>,
 	};
 	
 	// Create signature for the request
-	const signature = createRequestSignature(method, apiEndpoint, requestHeaders, requestBody, credentials.privateKey!);
+	const signature = createRequestSignature(method, apiEndpoint, requestHeaders, requestBody, credentials.privateKey || '');
 	requestHeaders['X-Bunq-Client-Signature'] = signature;
 
 	const options: IRequestOptions = {
@@ -220,7 +226,7 @@ export async function bunqApiRequest(
 			try {
 				credentials.sessionToken = await createSession.call(this, credentials);
 				requestHeaders['X-Bunq-Client-Authentication'] = credentials.sessionToken;
-				const newSignature = createRequestSignature(method, apiEndpoint, requestHeaders, requestBody, credentials.privateKey!);
+				const newSignature = createRequestSignature(method, apiEndpoint, requestHeaders, requestBody, credentials.privateKey || '');
 				requestHeaders['X-Bunq-Client-Signature'] = newSignature;
 				options.headers = requestHeaders;
 				
@@ -283,7 +289,7 @@ export async function bunqApiRequestAllItems(
 /**
  * Handle bunq-specific errors
  */
-export function handleBunqError(node: any, error: NodeApiError | Error, endpoint?: string): NodeApiError {
+export function handleBunqError(node: { name: string }, error: NodeApiError | Error, endpoint?: string): NodeApiError {
 	if (error instanceof NodeApiError) {
 		return error;
 	}
@@ -295,7 +301,7 @@ export function handleBunqError(node: any, error: NodeApiError | Error, endpoint
 
 	// Check if it's a bunq API error with response body
 	if ('statusCode' in error && 'response' in error) {
-		const apiError = error as any;
+		const apiError = error as { statusCode: number; response?: { body?: string | object } };
 		errorMessage = `bunq API request failed with status ${apiError.statusCode}`;
 		
 		if (endpoint) {
@@ -324,25 +330,36 @@ export function handleBunqError(node: any, error: NodeApiError | Error, endpoint
 		errorMessage += `: ${error.message}`;
 	}
 
-	return new NodeApiError(node, { message: errorMessage });
+	// Create a minimal INode-compatible object for NodeApiError
+	const nodeForError = {
+		id: 'unknown',
+		name: node.name,
+		type: 'n8n-nodes-bunq.bunq',
+		typeVersion: 1,
+		position: [0, 0] as [number, number],
+		parameters: {}
+	};
+
+	return new NodeApiError(nodeForError, { message: errorMessage });
 }
 
 /**
  * Check if error is session expired
  */
-function isSessionExpiredError(error: any): boolean {
-	if ('statusCode' in error && error.statusCode === 401) {
+function isSessionExpiredError(error: unknown): boolean {
+	if (error && typeof error === 'object' && 'statusCode' in error && (error as { statusCode: number }).statusCode === 401) {
 		return true;
 	}
 	
-	if ('response' in error && error.response?.body) {
+	if (error && typeof error === 'object' && 'response' in error && (error as { response?: { body?: string | object } }).response?.body) {
 		try {
-			const errorBody = typeof error.response.body === 'string' 
-				? JSON.parse(error.response.body) 
-				: error.response.body;
+			const typedError = error as { response: { body: string | object } };
+			const errorBody = typeof typedError.response.body === 'string' 
+				? JSON.parse(typedError.response.body) 
+				: typedError.response.body;
 			
 			if (errorBody.Error && Array.isArray(errorBody.Error)) {
-				return errorBody.Error.some((err: any) => 
+				return errorBody.Error.some((err: { error_description?: string }) => 
 					err.error_description && err.error_description.includes('session')
 				);
 			}

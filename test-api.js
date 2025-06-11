@@ -2,7 +2,7 @@ const https = require('https');
 const crypto = require('crypto');
 
 // Your API key
-const API_KEY = 'ffa874c531258f12f82354fd7b04b32cfcbc2ec338c9190ccc7a4bc60274c1fd';
+const API_KEY = '';
 
 // Base URLs
 const SANDBOX_URL = 'https://public-api.sandbox.bunq.com';
@@ -91,34 +91,32 @@ function makeRequest(url, method, headers = {}, body = null) {
 // Test installation endpoint
 async function testInstallation(baseUrl) {
     console.log(`\n=== Testing Installation on ${baseUrl.includes('sandbox') ? 'SANDBOX' : 'PRODUCTION'} ===`);
-    
+
     try {
         const keyPair = generateKeyPair();
         console.log('Generated RSA key pair');
-        
+
         const response = await makeRequest(
             `${baseUrl}/v1/installation`,
-            'POST',
-            {},
-            {
+            'POST', {}, {
                 client_public_key: keyPair.publicKey
             }
         );
-        
+
         console.log(`Status: ${response.statusCode}`);
         console.log('Response:', JSON.stringify(response.body, null, 2));
-        
+
         if (response.statusCode === 200 && response.body.Response) {
-            const installationToken = response.body.Response[1]?.Token?.token;
+            const installationToken = response.body.Response[1] ? .Token ? .token;
             console.log(`Installation Token: ${installationToken ? 'Generated successfully' : 'Not found'}`);
-            
+
             return {
                 installationToken,
                 privateKey: keyPair.privateKey,
                 publicKey: keyPair.publicKey
             };
         }
-        
+
         return null;
     } catch (error) {
         console.error('Installation failed:', error.message);
@@ -129,26 +127,24 @@ async function testInstallation(baseUrl) {
 // Test device registration
 async function testDeviceRegistration(baseUrl, installationToken, privateKey) {
     console.log('\n=== Testing Device Registration ===');
-    
+
     try {
         const deviceId = generateDeviceId();
         console.log(`Generated Device ID: ${deviceId}`);
-        
+
         const response = await makeRequest(
             `${baseUrl}/v1/device-server`,
-            'POST',
-            {
+            'POST', {
                 'X-Bunq-Client-Authentication': installationToken
-            },
-            {
+            }, {
                 description: deviceId,
                 secret: API_KEY
             }
         );
-        
+
         console.log(`Status: ${response.statusCode}`);
         console.log('Response:', JSON.stringify(response.body, null, 2));
-        
+
         return response.statusCode === 200;
     } catch (error) {
         console.error('Device registration failed:', error.message);
@@ -159,28 +155,26 @@ async function testDeviceRegistration(baseUrl, installationToken, privateKey) {
 // Test session creation
 async function testSessionCreation(baseUrl, installationToken) {
     console.log('\n=== Testing Session Creation ===');
-    
+
     try {
         const response = await makeRequest(
             `${baseUrl}/v1/session-server`,
-            'POST',
-            {
+            'POST', {
                 'X-Bunq-Client-Authentication': installationToken
-            },
-            {
+            }, {
                 secret: API_KEY
             }
         );
-        
+
         console.log(`Status: ${response.statusCode}`);
         console.log('Response:', JSON.stringify(response.body, null, 2));
-        
+
         if (response.statusCode === 200 && response.body.Response) {
-            const sessionToken = response.body.Response[1]?.Token?.token;
+            const sessionToken = response.body.Response[1] ? .Token ? .token;
             console.log(`Session Token: ${sessionToken ? 'Generated successfully' : 'Not found'}`);
             return sessionToken;
         }
-        
+
         return null;
     } catch (error) {
         console.error('Session creation failed:', error.message);
@@ -191,19 +185,18 @@ async function testSessionCreation(baseUrl, installationToken) {
 // Test user endpoint
 async function testUserEndpoint(baseUrl, sessionToken) {
     console.log('\n=== Testing User Endpoint ===');
-    
+
     try {
         const response = await makeRequest(
             `${baseUrl}/v1/user`,
-            'GET',
-            {
+            'GET', {
                 'X-Bunq-Client-Authentication': sessionToken
             }
         );
-        
+
         console.log(`Status: ${response.statusCode}`);
         console.log('Response:', JSON.stringify(response.body, null, 2));
-        
+
         return response.statusCode === 200;
     } catch (error) {
         console.error('User endpoint test failed:', error.message);
@@ -215,20 +208,20 @@ async function testUserEndpoint(baseUrl, sessionToken) {
 async function runTests() {
     console.log('Starting bunq API tests...');
     console.log(`API Key: ${API_KEY.substring(0, 20)}...`);
-    
+
     // Test Sandbox
     console.log('\n' + '='.repeat(50));
     console.log('TESTING SANDBOX ENVIRONMENT');
     console.log('='.repeat(50));
-    
+
     const sandboxInstallation = await testInstallation(SANDBOX_URL);
     if (sandboxInstallation) {
         const deviceRegistered = await testDeviceRegistration(
-            SANDBOX_URL, 
-            sandboxInstallation.installationToken, 
+            SANDBOX_URL,
+            sandboxInstallation.installationToken,
             sandboxInstallation.privateKey
         );
-        
+
         if (deviceRegistered) {
             const sessionToken = await testSessionCreation(SANDBOX_URL, sandboxInstallation.installationToken);
             if (sessionToken) {
@@ -236,20 +229,20 @@ async function runTests() {
             }
         }
     }
-    
+
     // Test Production
     console.log('\n' + '='.repeat(50));
     console.log('TESTING PRODUCTION ENVIRONMENT');
     console.log('='.repeat(50));
-    
+
     const productionInstallation = await testInstallation(PRODUCTION_URL);
     if (productionInstallation) {
         const deviceRegistered = await testDeviceRegistration(
-            PRODUCTION_URL, 
-            productionInstallation.installationToken, 
+            PRODUCTION_URL,
+            productionInstallation.installationToken,
             productionInstallation.privateKey
         );
-        
+
         if (deviceRegistered) {
             const sessionToken = await testSessionCreation(PRODUCTION_URL, productionInstallation.installationToken);
             if (sessionToken) {
@@ -257,7 +250,7 @@ async function runTests() {
             }
         }
     }
-    
+
     console.log('\n' + '='.repeat(50));
     console.log('TESTS COMPLETED');
     console.log('='.repeat(50));
