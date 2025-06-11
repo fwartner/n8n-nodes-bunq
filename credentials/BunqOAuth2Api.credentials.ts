@@ -82,6 +82,14 @@ export class BunqOAuth2Api implements ICredentialType {
 			default: '',
 			description: 'Your bunq OAuth2 Client Secret',
 		},
+		{
+			displayName: 'Redirect URI Override',
+			name: 'redirectUrl',
+			type: 'string',
+			required: false,
+			default: '',
+			description: 'Custom redirect URI if different from n8n default. Must match exactly what you registered with bunq.',
+		},
 	];
 
 	test: ICredentialTestRequest = {
