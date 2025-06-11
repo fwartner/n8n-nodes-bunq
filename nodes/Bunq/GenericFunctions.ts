@@ -87,7 +87,7 @@ export async function bunqApiRequest(
 	qs: IDataObject = {},
 	headers: IDataObject = {},
 ): Promise<any> {
-	// Try OAuth2 credentials first, fall back to legacy API key credentials
+	// Prioritize OAuth2 credentials, fall back to legacy API key credentials only if OAuth2 is not available
 	let credentials: IBunqOAuth2Credentials | IBunqCredentials | null = null;
 	let useOAuth = false;
 
@@ -99,7 +99,7 @@ export async function bunqApiRequest(
 			credentials = await this.getCredentials('bunqApi') as IBunqCredentials;
 			useOAuth = false;
 		} catch {
-			throw new NodeOperationError(this.getNode(), 'No valid bunq credentials found!');
+			throw new NodeOperationError(this.getNode(), 'No valid bunq credentials found! Please configure OAuth2 credentials for the recommended authentication method.');
 		}
 	}
 	
@@ -126,6 +126,8 @@ export async function bunqApiRequest(
 		const oauthCredentials = credentials as IBunqOAuth2Credentials;
 		if (oauthCredentials.oauthTokenData?.access_token) {
 			defaultHeaders['Authorization'] = `Bearer ${oauthCredentials.oauthTokenData.access_token}`;
+		} else {
+			throw new NodeOperationError(this.getNode(), 'OAuth2 credentials are configured but no access token is available. Please re-authenticate using the OAuth2 flow.');
 		}
 	} else {
 		// Legacy API key authentication
@@ -166,6 +168,29 @@ export async function bunqApiRequest(
 		const response = await this.helpers.request(options);
 		return response;
 	} catch (error) {
+		// If using OAuth2 and we get a 401, try to refresh the token once
+		if (useOAuth && (error as any).statusCode === 401) {
+			const oauthCredentials = credentials as IBunqOAuth2Credentials;
+			if (oauthCredentials.oauthTokenData?.refresh_token) {
+				try {
+					const refreshedTokenData = await refreshOAuthToken.call(this, oauthCredentials.oauthTokenData.refresh_token);
+					
+					// Update the authorization header with the new access token
+					requestHeaders['Authorization'] = `Bearer ${refreshedTokenData.access_token}`;
+					
+					// Retry the request with the new token
+					const retryOptions: IRequestOptions = {
+						...options,
+						headers: requestHeaders,
+					};
+					
+					const retryResponse = await this.helpers.request(retryOptions);
+					return retryResponse;
+				} catch (refreshError) {
+					throw new NodeOperationError(this.getNode(), 'OAuth2 token refresh failed. Please re-authenticate using the OAuth2 flow.');
+				}
+			}
+		}
 		throw handleBunqError(this.getNode(), error, endpoint);
 	}
 }
@@ -273,7 +298,7 @@ export async function getOAuthAccessToken(
 }
 
 export async function refreshOAuthToken(
-	this: IExecuteFunctions | ILoadOptionsFunctions,
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
 	refreshToken: string,
 ): Promise<any> {
 	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;

@@ -95,7 +95,7 @@ describe('Bunq Node', () => {
 
 			const result = await bunqNode.execute.call(mockExecuteFunctions as IExecuteFunctions);
 
-			expect(mockInitializeBunqSession).toHaveBeenCalled();
+			// OAuth2 authentication does not require session initialization
 			expect(mockBunqApiRequest).toHaveBeenCalledWith('GET', '/user');
 			expect(result).toEqual([[mockResponse]]);
 		});
@@ -330,12 +330,24 @@ describe('Bunq Node', () => {
 	});
 
 	describe('Error Handling', () => {
-		it('should handle initialization errors', async () => {
-			mockInitializeBunqSession.mockRejectedValue(new Error('Session init failed'));
+		it('should handle API authentication errors', async () => {
+			// Set up parameters for user.get operation
+			(mockExecuteFunctions.getNodeParameter as jest.Mock)
+				.mockImplementation((paramName) => {
+					switch (paramName) {
+						case 'resource': return 'user';
+						case 'operation': return 'get';
+						case 'userId': return '';
+						default: return undefined;
+					}
+				});
+
+			(mockExecuteFunctions.continueOnFail as jest.Mock).mockReturnValue(false);
+			mockBunqApiRequest.mockRejectedValue(new Error('Authentication failed'));
 
 			await expect(
 				bunqNode.execute.call(mockExecuteFunctions as IExecuteFunctions)
-			).rejects.toThrow('Failed to initialize bunq session');
+			).rejects.toThrow('Authentication failed');
 		});
 
 		it('should handle API request errors when continueOnFail is true', async () => {

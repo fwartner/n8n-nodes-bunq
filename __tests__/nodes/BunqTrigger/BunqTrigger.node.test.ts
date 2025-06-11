@@ -106,7 +106,7 @@ describe('BunqTrigger Node', () => {
 			);
 
 			expect(result).toBe(true);
-			expect(mockInitializeBunqSessionHook).toHaveBeenCalled();
+			// OAuth2 authentication does not require session initialization
 			expect(mockBunqApiRequestHook).toHaveBeenCalledWith(
 				'GET',
 				'/user/monetary-account/456/notification-filter-url'

@@ -496,9 +496,13 @@ describe('bunq Integration Tests', () => {
 				continueOnFail: () => false,
 			};
 
+			// With OAuth2, authentication errors come from API requests rather than session initialization
+			const mockBunqApiRequest = require('../../nodes/Bunq/GenericFunctions').bunqApiRequest;
+			mockBunqApiRequest.mockRejectedValue(new Error('Authentication failed'));
+
 			await expect(
 				bunqNode.execute.call(executeFunctions as IExecuteFunctions)
-			).rejects.toThrow('Failed to initialize bunq session');
+			).rejects.toThrow('Authentication failed');
 		});
 
 		it('should continue processing when continueOnFail is enabled', async () => {

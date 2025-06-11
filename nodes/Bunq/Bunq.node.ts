@@ -44,10 +44,20 @@ export class Bunq implements INodeType {
 			{
 				name: 'bunqOAuth2Api',
 				required: false,
+				displayOptions: {
+					show: {
+						'@version': [1],
+					},
+				},
 			},
 			{
 				name: 'bunqApi',
 				required: false,
+				displayOptions: {
+					show: {
+						'@version': [1],
+					},
+				},
 			},
 		],
 		properties: [
@@ -146,12 +156,8 @@ export class Bunq implements INodeType {
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 
-		// Initialize bunq session if needed
-		try {
-			await initializeBunqSession.call(this);
-		} catch {
-			throw new NodeOperationError(this.getNode(), 'Failed to initialize bunq session');
-		}
+		// Note: OAuth2 authentication handles tokens automatically, 
+		// legacy API key authentication initializes session as needed
 
 		for (let i = 0; i < items.length; i++) {
 			try {

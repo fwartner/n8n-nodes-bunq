@@ -11,7 +11,6 @@ import {
 import {
 	bunqApiRequestHook,
 	formatBunqResponse,
-	initializeBunqSessionHook,
 } from '../Bunq/GenericFunctions';
 
 export class BunqTrigger implements INodeType {
@@ -32,10 +31,20 @@ export class BunqTrigger implements INodeType {
 			{
 				name: 'bunqOAuth2Api',
 				required: false,
+				displayOptions: {
+					show: {
+						'@version': [1],
+					},
+				},
 			},
 			{
 				name: 'bunqApi',
 				required: false,
+				displayOptions: {
+					show: {
+						'@version': [1],
+					},
+				},
 			},
 		],
 		webhooks: [
@@ -172,8 +181,7 @@ export class BunqTrigger implements INodeType {
 				const accountId = this.getNodeParameter('accountId') as string;
 				
 				try {
-					await initializeBunqSessionHook.call(this);
-					
+					// OAuth2 authentication handles tokens automatically
 					const userEndpoint = userId ? `/user/${userId}` : '/user';
 					const endpoint = `${userEndpoint}/monetary-account/${accountId}/notification-filter-url`;
 					
@@ -199,8 +207,7 @@ export class BunqTrigger implements INodeType {
 				const events = this.getNodeParameter('events') as string[];
 				
 				try {
-					await initializeBunqSessionHook.call(this);
-					
+					// OAuth2 authentication handles tokens automatically
 					const userEndpoint = userId ? `/user/${userId}` : '/user';
 					const endpoint = `${userEndpoint}/monetary-account/${accountId}/notification-filter-url`;
 					
@@ -233,8 +240,7 @@ export class BunqTrigger implements INodeType {
 				const accountId = this.getNodeParameter('accountId') as string;
 				
 				try {
-					await initializeBunqSessionHook.call(this);
-					
+					// OAuth2 authentication handles tokens automatically
 					const userEndpoint = userId ? `/user/${userId}` : '/user';
 					const endpoint = `${userEndpoint}/monetary-account/${accountId}/notification-filter-url`;
 					
