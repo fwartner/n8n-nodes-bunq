@@ -1,5 +1,5 @@
 {
-    "name": "n8n-nodes-bunq",
+    "name": "n8n-nodes-bunq-test",
     "version": "1.0.1",
     "description": "n8n nodes for bunq banking API integration",
     "keywords": [
