@@ -1,4 +1,4 @@
-import { IRequestOptions } from 'n8n-workflow';
+import { IRequestOptions, IHttpRequestMethods } from 'n8n-workflow';
 import {
 	IExecuteFunctions,
 	ILoadOptionsFunctions,
@@ -6,28 +6,13 @@ import {
 	IHookFunctions,
 	IWebhookFunctions,
 	NodeApiError,
-	NodeOperationError,
 } from 'n8n-workflow';
-import { createSign, generateKeyPairSync, randomBytes } from 'crypto';
+import * as crypto from 'crypto';
 
 export interface IBunqOAuth2Credentials {
 	environment: 'production' | 'sandbox';
 	clientId: string;
 	clientSecret: string;
-	apiKey: string;
-	accessToken?: string;
-	refreshToken?: string;
-	oauthTokenData?: any;
-}
-
-export interface IBunqCredentials {
-	environment: 'production' | 'sandbox';
-	apiKey: string;
-	installationToken?: string;
-	deviceId?: string;
-	sessionToken?: string;
-	privateKey?: string;
-	publicKey?: string;
 }
 
 export function getBunqApiUrl(environment: string): string {
@@ -36,16 +21,233 @@ export function getBunqApiUrl(environment: string): string {
 		: 'https://public-api.sandbox.bunq.com';
 }
 
+/**
+ * Make an authenticated API request to bunq using OAuth2
+ */
+export async function bunqApiRequest(
+	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
+	method: IHttpRequestMethods,
+	endpoint: string,
+	body: IDataObject = {},
+	qs: IDataObject = {},
+	headers: IDataObject = {},
+): Promise<IDataObject> {
+	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
+	const baseUrl = getBunqApiUrl(credentials.environment);
+	
+	// Ensure endpoint starts with /v1/
+	const apiEndpoint = endpoint.startsWith('/v1/') ? endpoint : `/v1${endpoint}`;
+	const url = `${baseUrl}${apiEndpoint}`;
+
+	const options: IRequestOptions = {
+		method,
+		url,
+		body: Object.keys(body).length > 0 ? body : undefined,
+		qs,
+		headers: {
+			'Content-Type': 'application/json',
+			'Cache-Control': 'no-cache',
+			'User-Agent': 'n8n-bunq-node',
+			...headers,
+		},
+		json: true,
+	};
+
+	try {
+		// Use n8n's built-in OAuth2 authentication
+		const response = await this.helpers.requestWithAuthentication.call(this, 'bunqOAuth2Api', options);
+		return response as IDataObject;
+	} catch (error) {
+		throw handleBunqError(this.getNode(), error as NodeApiError | Error, endpoint);
+	}
+}
+
+/**
+ * Make API requests that return all items (handles pagination)
+ */
+export async function bunqApiRequestAllItems(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+	method: IHttpRequestMethods,
+	endpoint: string,
+	body: IDataObject = {},
+	qs: IDataObject = {},
+): Promise<IDataObject[]> {
+	const items: IDataObject[] = [];
+	let responseData: IDataObject;
+	
+	qs.count = qs.count || 200; // Default pagination size
+	let older_id: string | undefined;
+
+	do {
+		if (older_id) {
+			qs.older_id = older_id;
+		}
+		
+		responseData = await bunqApiRequest.call(this, method, endpoint, body, qs);
+		
+		if (responseData.Response && Array.isArray(responseData.Response)) {
+			items.push(...responseData.Response);
+			
+			// Get the ID of the last item for pagination
+			const lastItem = responseData.Response[responseData.Response.length - 1];
+			if (lastItem && typeof lastItem === 'object') {
+				const lastItemData = Object.values(lastItem)[0] as IDataObject;
+				older_id = lastItemData?.id as string;
+			}
+			
+			// If we got fewer items than requested, we've reached the end
+			if (responseData.Response.length < (qs.count as number)) {
+				break;
+			}
+		} else {
+			break;
+		}
+	} while (responseData.Response && responseData.Response.length > 0);
+
+	return items;
+}
+
+/**
+ * Handle bunq-specific errors
+ */
+export function handleBunqError(node: any, error: NodeApiError | Error, endpoint?: string): NodeApiError {
+	if (error instanceof NodeApiError) {
+		return error;
+	}
+
+	let errorMessage = 'bunq API request failed';
+	if (endpoint) {
+		errorMessage += ` for endpoint: ${endpoint}`;
+	}
+
+	// Check if it's a bunq API error with response body
+	if ('statusCode' in error && 'response' in error) {
+		const apiError = error as any;
+		errorMessage = `bunq API request failed with status ${apiError.statusCode}`;
+		
+		if (endpoint) {
+			errorMessage += ` for endpoint: ${endpoint}`;
+		}
+
+		// Try to parse bunq error details
+		if (apiError.response && apiError.response.body) {
+			try {
+				const errorBody = typeof apiError.response.body === 'string' 
+					? JSON.parse(apiError.response.body) 
+					: apiError.response.body;
+				
+				if (errorBody.Error && Array.isArray(errorBody.Error) && errorBody.Error.length > 0) {
+					const bunqError = errorBody.Error[0];
+					const description = bunqError.error_description_translated || bunqError.error_description;
+					if (description) {
+						errorMessage += `: ${description}`;
+					}
+				}
+			} catch {
+				// Ignore JSON parsing errors
+			}
+		}
+	} else if (error.message) {
+		errorMessage += `: ${error.message}`;
+	}
+
+	return new NodeApiError(node, { message: errorMessage });
+}
+
+/**
+ * Format bunq API response for consistent output
+ */
+export function formatBunqResponse(response: IDataObject): IDataObject {
+	if (!response) {
+		return {};
+	}
+
+	// If response contains bunq's standard Response wrapper, format it
+	if (response.Response && Array.isArray(response.Response)) {
+		return {
+			...response,
+			Response: (response.Response as IDataObject[]).map((item: IDataObject) => {
+				// bunq responses typically have a single key with the actual data
+				const keys = Object.keys(item);
+				if (keys.length === 1) {
+					const dataKey = keys[0];
+					const itemData = item[dataKey] as IDataObject;
+					return {
+						type: dataKey,
+						...itemData,
+					};
+				}
+				return item;
+			}),
+		};
+	}
+
+	// For single item responses
+	if (response.Response && !Array.isArray(response.Response)) {
+		const responseData = response.Response as IDataObject;
+		const keys = Object.keys(responseData);
+		if (keys.length === 1) {
+			const dataKey = keys[0];
+			const itemData = responseData[dataKey] as IDataObject;
+			return {
+				...response,
+				Response: {
+					type: dataKey,
+					...itemData,
+				},
+			};
+		}
+	}
+
+	return response;
+}
+
+/**
+ * OAuth2-specific API request for hooks/webhooks
+ */
+export async function bunqApiRequestHook(
+	this: IHookFunctions,
+	method: IHttpRequestMethods,
+	endpoint: string,
+	body: IDataObject = {},
+	qs: IDataObject = {},
+): Promise<IDataObject> {
+	return bunqApiRequest.call(this, method, endpoint, body, qs);
+}
+
+/**
+ * Validate OAuth2 credentials
+ */
+export async function validateOAuth2Credentials(
+	this: IExecuteFunctions | ILoadOptionsFunctions,
+): Promise<boolean> {
+	try {
+		const response = await bunqApiRequest.call(this, 'GET', '/user');
+		return !!(response.Response && Array.isArray(response.Response) && response.Response.length > 0);
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Generate a unique request ID
+ */
 export function generateRequestId(): string {
-	return randomBytes(16).toString('hex');
+	return crypto.randomBytes(16).toString('hex');
 }
 
+/**
+ * Generate a device ID for bunq API
+ */
 export function generateDeviceId(): string {
-	return `n8n-bunq-${randomBytes(8).toString('hex')}`;
+	return `n8n-bunq-${crypto.randomBytes(8).toString('hex')}`;
 }
 
+/**
+ * Generate RSA key pair for bunq API authentication
+ */
 export function generateKeyPair(): { privateKey: string; publicKey: string } {
-	const { privateKey, publicKey } = generateKeyPairSync('rsa', {
+	const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', {
 		modulusLength: 2048,
 		publicKeyEncoding: {
 			type: 'spki',
@@ -60,438 +262,29 @@ export function generateKeyPair(): { privateKey: string; publicKey: string } {
 	return { privateKey, publicKey };
 }
 
+/**
+ * Create request signature for bunq API
+ */
 export function createRequestSignature(
 	method: string,
-	uri: string,
-	headers: IDataObject,
+	path: string,
+	headers: Record<string, string>,
 	body: string,
 	privateKey: string,
 ): string {
-	const headersString = Object.keys(headers)
-		.sort()
-		.map(key => `${key}: ${headers[key]}`)
+	// Create the string to sign
+	const headersString = Object.entries(headers)
+		.sort(([a], [b]) => a.localeCompare(b))
+		.map(([key, value]) => `${key}: ${value}`)
 		.join('\n');
 
-	const stringToSign = `${method}\n${uri}\n${headersString}\n\n${body}`;
-	
-	const sign = createSign('SHA256');
+	const stringToSign = `${method} ${path}\n${headersString}\n\n${body}`;
+
+	// Create signature
+	const sign = crypto.createSign('SHA256');
 	sign.update(stringToSign);
-	return sign.sign(privateKey, 'base64');
-}
+	sign.end();
 
-export async function bunqApiRequest(
-	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
-	method: string,
-	endpoint: string,
-	body: IDataObject = {},
-	qs: IDataObject = {},
-	headers: IDataObject = {},
-): Promise<any> {
-	// Prioritize OAuth2 credentials, fall back to legacy API key credentials only if OAuth2 is not available
-	let credentials: IBunqOAuth2Credentials | IBunqCredentials | null = null;
-	let useOAuth = false;
-
-	try {
-		credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
-		useOAuth = true;
-	} catch {
-		try {
-			credentials = await this.getCredentials('bunqApi') as IBunqCredentials;
-			useOAuth = false;
-		} catch {
-			throw new NodeOperationError(this.getNode(), 'No valid bunq credentials found! Please configure OAuth2 credentials for the recommended authentication method.');
-		}
-	}
-	
-	if (!credentials) {
-		throw new NodeOperationError(this.getNode(), 'No credentials got returned!');
-	}
-
-	const baseUrl = getBunqApiUrl(credentials.environment);
-	const uri = `${baseUrl}/v1${endpoint}`;
-	const requestId = generateRequestId();
-	
-	const defaultHeaders: IDataObject = {
-		'Content-Type': 'application/json',
-		'X-Bunq-Language': 'en_US',
-		'X-Bunq-Region': 'nl_NL',
-		'X-Bunq-Client-Request-Id': requestId,
-		'X-Bunq-Geolocation': '0 0 0 0 000',
-		'User-Agent': 'n8n-bunq-integration/1.0.0',
-		'Cache-Control': 'no-cache',
-	};
-
-	if (useOAuth) {
-		// OAuth2 authentication
-		const oauthCredentials = credentials as IBunqOAuth2Credentials;
-		if (oauthCredentials.oauthTokenData?.access_token) {
-			defaultHeaders['Authorization'] = `Bearer ${oauthCredentials.oauthTokenData.access_token}`;
-		} else {
-			throw new NodeOperationError(this.getNode(), 'OAuth2 credentials are configured but no access token is available. Please re-authenticate using the OAuth2 flow.');
-		}
-	} else {
-		// Legacy API key authentication
-		const legacyCredentials = credentials as IBunqCredentials;
-		if (legacyCredentials.sessionToken) {
-			defaultHeaders['X-Bunq-Client-Authentication'] = legacyCredentials.sessionToken;
-		}
-	}
-
-	const requestHeaders = { ...defaultHeaders, ...headers };
-	const bodyString = Object.keys(body).length > 0 ? JSON.stringify(body) : '';
-
-	// Only add signature for legacy authentication
-	if (!useOAuth) {
-		const legacyCredentials = credentials as IBunqCredentials;
-		if (legacyCredentials.privateKey && endpoint !== '/installation') {
-			const signature = createRequestSignature(
-				method.toUpperCase(),
-				`/v1${endpoint}`,
-				requestHeaders,
-				bodyString,
-				legacyCredentials.privateKey,
-			);
-			requestHeaders['X-Bunq-Client-Signature'] = signature;
-		}
-	}
-
-	const options: IRequestOptions = {
-		method: method as any,
-		url: uri,
-		body: bodyString,
-		qs,
-		headers: requestHeaders,
-		json: false,
-	};
-
-	try {
-		const response = await this.helpers.request(options);
-		return response;
-	} catch (error) {
-		// If using OAuth2 and we get a 401, try to refresh the token once
-		if (useOAuth && (error as any).statusCode === 401) {
-			const oauthCredentials = credentials as IBunqOAuth2Credentials;
-			if (oauthCredentials.oauthTokenData?.refresh_token) {
-				try {
-					const refreshedTokenData = await refreshOAuthToken.call(this, oauthCredentials.oauthTokenData.refresh_token);
-					
-					// Update the authorization header with the new access token
-					requestHeaders['Authorization'] = `Bearer ${refreshedTokenData.access_token}`;
-					
-					// Retry the request with the new token
-					const retryOptions: IRequestOptions = {
-						...options,
-						headers: requestHeaders,
-					};
-					
-					const retryResponse = await this.helpers.request(retryOptions);
-					return retryResponse;
-				} catch (refreshError) {
-					throw new NodeOperationError(this.getNode(), 'OAuth2 token refresh failed. Please re-authenticate using the OAuth2 flow.');
-				}
-			}
-		}
-		throw handleBunqError(this.getNode(), error, endpoint);
-	}
-}
-
-export async function bunqApiRequestAllItems(
-	this: IExecuteFunctions | ILoadOptionsFunctions,
-	method: string,
-	endpoint: string,
-	body: IDataObject = {},
-	qs: IDataObject = {},
-): Promise<any[]> {
-	const returnData: IDataObject[] = [];
-	let responseData;
-	
-	qs.count = qs.count || 200;
-	
-	do {
-		responseData = await bunqApiRequest.call(this, method, endpoint, body, qs);
-		
-		if (responseData.Response && Array.isArray(responseData.Response)) {
-			returnData.push(...responseData.Response);
-		}
-		
-		const pagination = responseData.Pagination;
-		if (pagination && pagination.older_url) {
-			const url = new URL(pagination.older_url);
-			qs.older_id = url.searchParams.get('older_id');
-		} else {
-			break;
-		}
-	} while (true);
-
-	return returnData;
-}
-
-export function handleBunqError(node: any, error: any, endpoint?: string): NodeApiError {
-	if (error.statusCode) {
-		const errorData = error.response?.body ? JSON.parse(error.response.body) : {};
-		
-		let message = `bunq API request failed with status ${error.statusCode}`;
-		
-		if (errorData.Error && errorData.Error.length > 0) {
-			const bunqError = errorData.Error[0];
-			message = `${bunqError.error_description || bunqError.error_description_translated || message}`;
-		}
-		
-		if (endpoint) {
-			message += ` (endpoint: ${endpoint})`;
-		}
-
-		return new NodeApiError(node, error, { message });
-	}
-
-	return new NodeApiError(node, error);
-}
-
-export async function validateCredentials(
-	this: IExecuteFunctions | ILoadOptionsFunctions,
-): Promise<boolean> {
-	try {
-		await bunqApiRequest.call(this, 'GET', '/user');
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-export async function getOAuthAccessToken(
-	this: IExecuteFunctions | ILoadOptionsFunctions,
-	authCode: string,
-	redirectUri: string,
-): Promise<any> {
-	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
-	
-	if (!credentials) {
-		throw new NodeOperationError(this.getNode(), 'No OAuth2 credentials found!');
-	}
-
-	const baseUrl = getBunqApiUrl(credentials.environment);
-	
-	const tokenData = {
-		grant_type: 'authorization_code',
-		code: authCode,
-		client_id: credentials.clientId,
-		client_secret: credentials.clientSecret,
-		redirect_uri: redirectUri,
-	};
-
-	const options: IRequestOptions = {
-		method: 'POST',
-		url: `${baseUrl}/v1/oauth/token`,
-		form: tokenData,
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-			'User-Agent': 'n8n-bunq-integration/1.0.0',
-		},
-	};
-
-	try {
-		const response = await this.helpers.request(options);
-		return response;
-	} catch (error) {
-		throw handleBunqError(this.getNode(), error, '/oauth/token');
-	}
-}
-
-export async function refreshOAuthToken(
-	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
-	refreshToken: string,
-): Promise<any> {
-	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
-	
-	if (!credentials) {
-		throw new NodeOperationError(this.getNode(), 'No OAuth2 credentials found!');
-	}
-
-	const baseUrl = getBunqApiUrl(credentials.environment);
-	
-	const tokenData = {
-		grant_type: 'refresh_token',
-		refresh_token: refreshToken,
-		client_id: credentials.clientId,
-		client_secret: credentials.clientSecret,
-	};
-
-	const options: IRequestOptions = {
-		method: 'POST',
-		url: `${baseUrl}/v1/oauth/token`,
-		form: tokenData,
-		headers: {
-			'Content-Type': 'application/x-www-form-urlencoded',
-			'User-Agent': 'n8n-bunq-integration/1.0.0',
-		},
-	};
-
-	try {
-		const response = await this.helpers.request(options);
-		return response;
-	} catch (error) {
-		throw handleBunqError(this.getNode(), error, '/oauth/token');
-	}
-}
-
-export async function bunqOAuthApiRequest(
-	this: IExecuteFunctions | ILoadOptionsFunctions | IHookFunctions | IWebhookFunctions,
-	method: string,
-	endpoint: string,
-	body: IDataObject = {},
-	qs: IDataObject = {},
-	headers: IDataObject = {},
-): Promise<any> {
-	const credentials = await this.getCredentials('bunqOAuth2Api') as IBunqOAuth2Credentials;
-	
-	if (!credentials) {
-		throw new NodeOperationError(this.getNode(), 'No OAuth2 credentials found!');
-	}
-
-	const baseUrl = getBunqApiUrl(credentials.environment);
-	const uri = `${baseUrl}/v1${endpoint}`;
-	const requestId = generateRequestId();
-	
-	const defaultHeaders: IDataObject = {
-		'Content-Type': 'application/json',
-		'X-Bunq-Language': 'en_US',
-		'X-Bunq-Region': 'nl_NL',
-		'X-Bunq-Client-Request-Id': requestId,
-		'X-Bunq-Geolocation': '0 0 0 0 000',
-		'User-Agent': 'n8n-bunq-integration/1.0.0',
-		'Cache-Control': 'no-cache',
-		...headers,
-	};
-
-	// Add OAuth Bearer token
-	if (credentials.oauthTokenData?.access_token) {
-		defaultHeaders['Authorization'] = `Bearer ${credentials.oauthTokenData.access_token}`;
-	}
-
-	const options: IRequestOptions = {
-		method: method as any,
-		url: uri,
-		body: Object.keys(body).length > 0 ? JSON.stringify(body) : undefined,
-		qs,
-		headers: defaultHeaders,
-		json: true,
-	};
-
-	try {
-		const response = await this.helpers.request(options);
-		return response;
-	} catch (error) {
-		throw handleBunqError(this.getNode(), error, endpoint);
-	}
-}
-
-export function formatBunqResponse(response: any): IDataObject {
-	if (!response || !response.Response) {
-		return response;
-	}
-
-	if (Array.isArray(response.Response)) {
-		return {
-			...response,
-			Response: response.Response.map((item: any) => {
-				const key = Object.keys(item)[0];
-				return {
-					type: key,
-					...item[key],
-				};
-			}),
-		};
-	}
-
-	const key = Object.keys(response.Response)[0];
-	return {
-		...response,
-		Response: {
-			type: key,
-			...response.Response[key],
-		},
-	};
-}
-
-export async function bunqApiRequestHook(
-	this: IHookFunctions,
-	method: string,
-	endpoint: string,
-	body: IDataObject = {},
-	qs: IDataObject = {},
-	headers: IDataObject = {},
-): Promise<any> {
-	return bunqApiRequest.call(this as any, method, endpoint, body, qs, headers);
-}
-
-export async function initializeBunqSessionHook(
-	this: IHookFunctions,
-): Promise<IBunqCredentials> {
-	return initializeBunqSession.call(this as any);
-}
-
-export async function initializeBunqSession(
-	this: IExecuteFunctions | ILoadOptionsFunctions,
-): Promise<IBunqCredentials> {
-	const credentials = await this.getCredentials('bunqApi') as IBunqCredentials;
-	
-	if (!credentials.privateKey || !credentials.publicKey) {
-		const keyPair = generateKeyPair();
-		credentials.privateKey = keyPair.privateKey;
-		credentials.publicKey = keyPair.publicKey;
-	}
-
-	if (!credentials.deviceId) {
-		credentials.deviceId = generateDeviceId();
-	}
-
-	if (!credentials.installationToken) {
-		const installationResponse = await bunqApiRequest.call(
-			this,
-			'POST',
-			'/installation',
-			{
-				client_public_key: credentials.publicKey,
-			},
-		);
-		
-		if (installationResponse.Response && installationResponse.Response.length > 1) {
-			credentials.installationToken = installationResponse.Response[1].Token.token;
-		}
-	}
-
-	if (!credentials.sessionToken) {
-		await bunqApiRequest.call(
-			this,
-			'POST',
-			'/device-server',
-			{
-				description: credentials.deviceId,
-				secret: credentials.apiKey,
-			},
-			{},
-			{
-				'X-Bunq-Client-Authentication': credentials.installationToken,
-			},
-		);
-
-		const sessionResponse = await bunqApiRequest.call(
-			this,
-			'POST',
-			'/session-server',
-			{
-				secret: credentials.apiKey,
-			},
-			{},
-			{
-				'X-Bunq-Client-Authentication': credentials.installationToken,
-			},
-		);
-
-		if (sessionResponse.Response && sessionResponse.Response.length > 1) {
-			credentials.sessionToken = sessionResponse.Response[1].Token.token;
-		}
-	}
-
-	return credentials;
+	const signature = sign.sign(privateKey, 'base64');
+	return signature;
 }

@@ -11,7 +11,6 @@ import {
 	bunqApiRequest,
 	bunqApiRequestAllItems,
 	formatBunqResponse,
-	initializeBunqSession,
 } from './GenericFunctions';
 
 import { userOperations, userFields } from './descriptions/UserDescription';
@@ -43,21 +42,7 @@ export class Bunq implements INodeType {
 		credentials: [
 			{
 				name: 'bunqOAuth2Api',
-				required: false,
-				displayOptions: {
-					show: {
-						'@version': [1],
-					},
-				},
-			},
-			{
-				name: 'bunqApi',
-				required: false,
-				displayOptions: {
-					show: {
-						'@version': [1],
-					},
-				},
+				required: true,
 			},
 		],
 		properties: [
@@ -156,8 +141,7 @@ export class Bunq implements INodeType {
 		const resource = this.getNodeParameter('resource', 0) as string;
 		const operation = this.getNodeParameter('operation', 0) as string;
 
-		// Note: OAuth2 authentication handles tokens automatically, 
-		// legacy API key authentication initializes session as needed
+		// OAuth2 authentication handles tokens automatically via n8n's built-in OAuth2 flow
 
 		for (let i = 0; i < items.length; i++) {
 			try {
@@ -613,21 +597,26 @@ export class Bunq implements INodeType {
 						const responseData = await bunqApiRequest.call(this, 'POST', baseEndpoint, attachmentData);
 						
 						// Then upload the file content
-						if (responseData.Response && responseData.Response[0]) {
-							const attachmentPublic = responseData.Response[0].AttachmentPublic;
-							if (attachmentPublic && attachmentPublic.attachment && attachmentPublic.attachment.urls) {
-								const uploadUrl = attachmentPublic.attachment.urls.public;
+						if (responseData.Response && Array.isArray(responseData.Response) && responseData.Response[0]) {
+							const firstResponse = responseData.Response[0] as IDataObject;
+							const attachmentPublic = firstResponse.AttachmentPublic as IDataObject;
+							if (attachmentPublic && attachmentPublic.attachment) {
+								const attachment = attachmentPublic.attachment as IDataObject;
+								if (attachment.urls) {
+									const urls = attachment.urls as IDataObject;
+									const uploadUrl = urls.public as string;
 								
-								// Upload file content to the provided URL
-								await this.helpers.request({
-									method: 'PUT',
-									url: uploadUrl,
-									body: binaryData.data,
-									headers: {
-										'Content-Type': mimeType,
-										'Content-Length': binaryData.data.length.toString(),
-									},
-								});
+									// Upload file content to the provided URL
+									await this.helpers.request({
+										method: 'PUT',
+										url: uploadUrl,
+										body: binaryData.data,
+										headers: {
+											'Content-Type': mimeType,
+											'Content-Length': binaryData.data.length.toString(),
+										},
+									});
+								}
 							}
 						}
 
@@ -1143,28 +1132,30 @@ export class Bunq implements INodeType {
 						const statementEndpoint = `${baseEndpoint}/${statementId}`;
 						const statementData = await bunqApiRequest.call(this, 'GET', statementEndpoint);
 						
-						if (statementData.Response && statementData.Response[0] && statementData.Response[0].ExportStatement) {
-							const exportStatement = statementData.Response[0].ExportStatement;
+						if (statementData.Response && Array.isArray(statementData.Response) && statementData.Response[0]) {
+							const firstResponse = statementData.Response[0] as IDataObject;
+							if (firstResponse.ExportStatement) {
+								const exportStatement = firstResponse.ExportStatement as IDataObject;
 							
-							if (exportStatement.status === 'COMPLETED' && exportStatement.download_url) {
-								const downloadUrl = exportStatement.download_url;
-								
-								// Download the file content
-								const fileResponse = await this.helpers.request({
-									method: 'GET',
-									url: downloadUrl,
-									encoding: null, // Important for binary data
-								});
-								
-								const binaryPropertyName = downloadOptions.binaryPropertyName as string || 'data';
-								const customFileName = downloadOptions.fileName as string;
-								const fileName = customFileName || `statement_${statementId}.${exportStatement.statement_format.toLowerCase()}`;
-								
-								const binaryData = await this.helpers.prepareBinaryData(
-									fileResponse,
-									fileName,
-									exportStatement.content_type || 'application/octet-stream'
-								);
+								if (exportStatement.status === 'COMPLETED' && exportStatement.download_url) {
+									const downloadUrl = exportStatement.download_url as string;
+									
+									// Download the file content
+									const fileResponse = await this.helpers.request({
+										method: 'GET',
+										url: downloadUrl,
+										encoding: null, // Important for binary data
+									});
+									
+									const binaryPropertyName = downloadOptions.binaryPropertyName as string || 'data';
+									const customFileName = downloadOptions.fileName as string;
+									const fileName = customFileName || `statement_${statementId}.${(exportStatement.statement_format as string).toLowerCase()}`;
+									
+									const binaryData = await this.helpers.prepareBinaryData(
+										fileResponse,
+										fileName,
+										(exportStatement.content_type as string) || 'application/octet-stream'
+									);
 								
 								returnData.push({
 									json: {
@@ -1188,8 +1179,9 @@ export class Bunq implements INodeType {
 							throw new NodeOperationError(this.getNode(), `Statement ${statementId} not found`);
 						}
 					}
+				}
 
-					if (operation === 'deleteStatement') {
+				if (operation === 'deleteStatement') {
 						const statementId = this.getNodeParameter('statementId', i) as string;
 						const endpoint = `${baseEndpoint}/${statementId}`;
 						
@@ -1205,8 +1197,8 @@ export class Bunq implements INodeType {
 				}
 				throw error;
 			}
-		}
+	}
 
-		return [this.helpers.returnJsonArray(returnData)];
+	return [this.helpers.returnJsonArray(returnData)];
 	}
 }

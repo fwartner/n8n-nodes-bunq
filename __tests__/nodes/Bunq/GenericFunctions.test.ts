@@ -176,6 +176,8 @@ RTRwLMEd3M4k9hTDTvjuzfU=
 
 		it('should handle bunq API errors with status code', () => {
 			const error = {
+				name: 'APIError',
+				message: 'API request failed',
 				statusCode: 400,
 				response: {
 					body: JSON.stringify({
@@ -195,6 +197,8 @@ RTRwLMEd3M4k9hTDTvjuzfU=
 
 		it('should handle errors without bunq error details', () => {
 			const error = {
+				name: 'APIError',
+				message: 'API request failed',
 				statusCode: 500,
 				response: { body: '{}' }
 			};
@@ -215,6 +219,8 @@ RTRwLMEd3M4k9hTDTvjuzfU=
 
 		it('should use translated error description when available', () => {
 			const error = {
+				name: 'APIError',
+				message: 'API request failed',
 				statusCode: 400,
 				response: {
 					body: JSON.stringify({

@@ -1,6 +1,7 @@
 import {
 	ICredentialType,
 	INodeProperties,
+	ICredentialTestRequest,
 } from 'n8n-workflow';
 
 export class BunqOAuth2Api implements ICredentialType {
@@ -81,16 +82,13 @@ export class BunqOAuth2Api implements ICredentialType {
 			default: '',
 			description: 'Your bunq OAuth2 Client Secret',
 		},
-		{
-			displayName: 'API Key',
-			name: 'apiKey',
-			type: 'string',
-			typeOptions: {
-				password: true,
-			},
-			required: true,
-			default: '',
-			description: 'Your bunq API key (still required for some operations)',
-		},
 	];
+
+	test: ICredentialTestRequest = {
+		request: {
+			baseURL: '={{$credentials.environment === "production" ? "https://api.bunq.com" : "https://public-api.sandbox.bunq.com"}}',
+			url: '/v1/user',
+			method: 'GET',
+		},
+	};
 }

@@ -30,21 +30,7 @@ export class BunqTrigger implements INodeType {
 		credentials: [
 			{
 				name: 'bunqOAuth2Api',
-				required: false,
-				displayOptions: {
-					show: {
-						'@version': [1],
-					},
-				},
-			},
-			{
-				name: 'bunqApi',
-				required: false,
-				displayOptions: {
-					show: {
-						'@version': [1],
-					},
-				},
+				required: true,
 			},
 		],
 		webhooks: [
@@ -188,9 +174,9 @@ export class BunqTrigger implements INodeType {
 					const response = await bunqApiRequestHook.call(this, 'GET', endpoint);
 					
 					if (response.Response && Array.isArray(response.Response)) {
-						return response.Response.some((filter: any) => 
+						return response.Response.some((filter: IDataObject) => 
 							filter.NotificationFilterUrl && 
-							filter.NotificationFilterUrl.notification_target === webhookUrl
+							(filter.NotificationFilterUrl as IDataObject).notification_target === webhookUrl
 						);
 					}
 					
@@ -224,7 +210,7 @@ export class BunqTrigger implements INodeType {
 					
 					const response = await bunqApiRequestHook.call(this, 'POST', endpoint, webhookData);
 					
-					if (response.Response && response.Response[0]) {
+					if (response.Response && Array.isArray(response.Response) && response.Response[0]) {
 						return true;
 					}
 					
