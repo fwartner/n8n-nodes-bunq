@@ -1,0 +1,9 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- bunq official brand colors -->
+  <rect width="24" height="24" rx="5" fill="#FF6600"/>
+  <!-- Simplified bunq logo representation -->
+  <g transform="translate(2, 2)">
+    <!-- Letter 'b' in bunq style -->
+    <path d="M2 2v16h8c2.21 0 4-1.79 4-4 0-1.5-.85-2.81-2.09-3.45C12.6 9.87 13 9.0 13 8c0-2.21-1.79-4-4-4H2zm3 3h4c.55 0 1 .45 1 1s-.45 1-1 1H5V5zm0 5h5c.55 0 1 .45 1 1s-.45 1-1 1H5v-2z" fill="white"/>
+  </g>
+</svg>

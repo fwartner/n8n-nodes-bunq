@@ -1,0 +1,47 @@
+# Source files
+__tests__/
+src/
+*.test.ts
+*.spec.ts
+
+# Development files
+.github/
+.vscode/
+.idea/
+eslint.config.js
+jest.config.js
+tsconfig.json
+CLAUDE.md
+
+# Documentation
+CONTRIBUTING.md
+*.md
+!README.md
+
+# Environment and config files
+.env*
+.npmrc
+
+# Build tools
+*.tsbuildinfo
+
+# Coverage
+coverage/
+*.lcov
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+temp/

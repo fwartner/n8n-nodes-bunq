@@ -1,0 +1,42 @@
+{
+  "name": "n8n-nodes-bunq",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest",
+    "lint": "eslint . --ext .ts",
+    "format": "prettier --write ."
+  },
+  "keywords": [
+    "n8n",
+    "bunq",
+    "banking",
+    "api"
+  ],
+  "author": "",
+  "license": "MIT",
+  "description": "n8n nodes for bunq banking API integration",
+  "n8n": {
+    "credentials": [
+      "dist/credentials/BunqApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Bunq/Bunq.node.js",
+      "dist/nodes/BunqTrigger/BunqTrigger.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.34.0",
+    "@typescript-eslint/parser": "^8.34.0",
+    "eslint": "^9.28.0",
+    "jest": "^29.7.0",
+    "n8n": "^1.98.0",
+    "prettier": "^3.5.3",
+    "ts-jest": "^29.3.4",
+    "typescript": "^5.8.3"
+  }
+}
