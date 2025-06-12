@@ -12,6 +12,7 @@ import * as crypto from 'crypto';
 export interface IBunqApiCredentials {
 	environment: 'production' | 'sandbox';
 	apiKey: string;
+	showAdvanced?: boolean;
 	installationToken?: string;
 	deviceId?: string;
 	sessionToken?: string;
