@@ -46,7 +46,7 @@ export class Bunq implements INodeType {
 			},
 			{
 				name: 'bunqApi',
-				required: false,
+				required: true,
 			},
 		],
 		properties: [
