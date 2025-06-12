@@ -1,11 +1,10 @@
 export default {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  extensionsToTreatAsEsm: ['.ts'],
   roots: ['<rootDir>'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', { useESM: true }],
+    '^.+\\.ts$': ['ts-jest', { useESM: false }],
   },
   collectCoverageFrom: [
     'credentials/**/*.ts',
@@ -15,4 +14,7 @@ export default {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
+  moduleNameMapping: {
+    '^@/(.*)$': '<rootDir>/$1',
+  },
 };
