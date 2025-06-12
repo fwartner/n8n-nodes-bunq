@@ -36,7 +36,14 @@ export class BunqApi implements ICredentialType {
 			},
 			default: '',
 			required: true,
-			description: 'Your bunq API key',
+			description: 'Your bunq API key - this is the only field you need to fill in',
+		},
+		{
+			displayName: 'Show Advanced Options',
+			name: 'showAdvanced',
+			type: 'boolean',
+			default: false,
+			description: 'Show advanced options for debugging - normally you can leave this unchecked',
 		},
 		{
 			displayName: 'Installation Token',
@@ -46,14 +53,24 @@ export class BunqApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Installation token - Leave empty to generate automatically when using the node',
+			description: 'Installation token - Generated automatically when using the node',
+			displayOptions: {
+				show: {
+					'showAdvanced': [true],
+				},
+			},
 		},
 		{
 			displayName: 'Device ID',
 			name: 'deviceId',
 			type: 'string',
 			default: '',
-			description: 'Device ID - Leave empty to generate automatically when using the node',
+			description: 'Device ID - Generated automatically when using the node',
+			displayOptions: {
+				show: {
+					'showAdvanced': [true],
+				},
+			},
 		},
 		{
 			displayName: 'Session Token',
@@ -63,7 +80,12 @@ export class BunqApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Session token - Leave empty to generate automatically when using the node',
+			description: 'Session token - Generated automatically when using the node',
+			displayOptions: {
+				show: {
+					'showAdvanced': [true],
+				},
+			},
 		},
 		{
 			displayName: 'Private Key',
@@ -73,14 +95,24 @@ export class BunqApi implements ICredentialType {
 				password: true,
 			},
 			default: '',
-			description: 'Private key for request signing - Leave empty to generate automatically when using the node',
+			description: 'Private key for request signing - Generated automatically when using the node',
+			displayOptions: {
+				show: {
+					'showAdvanced': [true],
+				},
+			},
 		},
 		{
 			displayName: 'Public Key',
 			name: 'publicKey',
 			type: 'string',
 			default: '',
-			description: 'Public key for request signing - Leave empty to generate automatically when using the node',
+			description: 'Public key for request signing - Generated automatically when using the node',
+			displayOptions: {
+				show: {
+					'showAdvanced': [true],
+				},
+			},
 		},
 	];
 
