@@ -173,7 +173,7 @@ describe('BunqApi Credentials', () => {
 				(prop: INodeProperties) => prop.name === 'apiKey'
 			);
 			
-			expect(apiKeyProperty?.description).toBe('Your bunq API key');
+			expect(apiKeyProperty?.description).toBe('Your bunq API key - this is the only field you need to fill in');
 		});
 
 		it('should have helpful descriptions', () => {
